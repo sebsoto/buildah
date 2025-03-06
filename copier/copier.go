@@ -66,15 +66,15 @@ func extendedGlob(pattern string) (matches []string, err error) {
 		return subdirectories
 	}
 	expandPatterns := func(pattern string) []string {
-		components := []string{}
-		dir := pattern
-		file := ""
-		for dir != "" && dir != string(os.PathSeparator) {
-			dir, file = filepath.Split(dir)
-			components = append([]string{file}, components...)
-			dir = strings.TrimSuffix(dir, string(os.PathSeparator))
+		var patterns []string
+		components := strings.Split(pattern, string(os.PathSeparator))
+		volumeName := filepath.VolumeName(pattern)
+		if volumeName == "" {
+			patterns = []string{string(os.PathSeparator)}
+		} else {
+			patterns = []string{volumeName + string(os.PathSeparator)}
+			components = components[1:]
 		}
-		patterns := []string{string(os.PathSeparator)}
 		for i := range components {
 			var nextPatterns []string
 			if components[i] == "**" {
