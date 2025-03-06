@@ -714,7 +714,8 @@ func (i *containerImageRef) NewImageSource(_ context.Context, _ *types.SystemCon
 		}
 		logrus.Debugf("%s size is %d bytes, uncompressed digest %s, possibly-compressed digest %s", what, size, srcHasher.Digest().String(), destHasher.Digest().String())
 		// Rename the layer so that we can more easily find it by digest later.
-		finalBlobName := filepath.Join(path, destHasher.Digest().String())
+		winSanitizedHash := strings.Replace(destHasher.Digest().String(), ":", "_", -1)
+		finalBlobName := filepath.Join(path, winSanitizedHash)
 		if err = os.Rename(filepath.Join(path, "layer"), finalBlobName); err != nil {
 			return nil, fmt.Errorf("storing %s to file while renaming %q to %q: %w", what, filepath.Join(path, "layer"), finalBlobName, err)
 		}
@@ -1003,7 +1004,10 @@ func (i *containerImageSource) GetBlob(_ context.Context, blob types.BlobInfo, _
 	} else {
 		for _, blobDir := range []string{i.blobDirectory, i.path} {
 			var layerFile *os.File
-			layerFile, err = os.OpenFile(filepath.Join(blobDir, blob.Digest.String()), os.O_RDONLY, 0o600)
+			winSanitizedHash := strings.Replace(blob.Digest.String(), ":", "_", -1)
+			finalBlobName := filepath.Join(blobDir, winSanitizedHash)
+
+			layerFile, err = os.OpenFile(finalBlobName, os.O_RDONLY, 0o600)
 			if err == nil {
 				st, err := layerFile.Stat()
 				if err != nil {

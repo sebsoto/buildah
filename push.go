@@ -155,6 +155,7 @@ func Push(ctx context.Context, image string, dest types.ImageReference, options 
 	if err != nil {
 		return nil, "", fmt.Errorf("computing digest of manifest of new image %q: %w", transports.ImageName(dest), err)
 	}
+	fmt.Printf("manifest digest: %s\n", manifestDigest)
 
 	var ref reference.Canonical
 	if name := dest.DockerReference(); name != nil {

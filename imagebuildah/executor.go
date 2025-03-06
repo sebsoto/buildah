@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/containers/common/pkg/capabilities"
 	"io"
 	"os"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -178,6 +180,7 @@ func newExecutor(logger *logrus.Logger, logPrefix string, store storage.Store, o
 	if err != nil {
 		return nil, fmt.Errorf("failed to get container config: %w", err)
 	}
+	fmt.Println("here11")
 
 	excludes := options.Excludes
 	if len(excludes) == 0 {
@@ -186,13 +189,21 @@ func newExecutor(logger *logrus.Logger, logPrefix string, store storage.Store, o
 			return nil, err
 		}
 	}
-	capabilities, err := defaultContainerConfig.Capabilities("", options.AddCapabilities, options.DropCapabilities)
-	if err != nil {
-		return nil, err
+	fmt.Println("here12")
+	var caps []string
+	if runtime.GOOS == "windows" {
+		caps = []string{capabilities.All}
+	} else {
+		caps, err = defaultContainerConfig.Capabilities("", options.AddCapabilities, options.DropCapabilities)
+		if err != nil {
+			return nil, err
+		}
+
 	}
 
 	var transientMounts []Mount
 
+	fmt.Println("here13")
 	for _, volume := range append(defaultContainerConfig.Volumes(), options.TransientMounts...) {
 		mount, err := parse.Volume(volume)
 		if err != nil {
@@ -201,6 +212,7 @@ func newExecutor(logger *logrus.Logger, logPrefix string, store storage.Store, o
 		transientMounts = append([]Mount{mount}, transientMounts...)
 	}
 
+	fmt.Println("here14")
 	secrets, err := parse.Secrets(options.CommonBuildOpts.Secrets)
 	if err != nil {
 		return nil, err
@@ -210,6 +222,7 @@ func newExecutor(logger *logrus.Logger, logPrefix string, store storage.Store, o
 		return nil, err
 	}
 
+	fmt.Println("here15")
 	writer := options.ReportWriter
 	if options.Quiet {
 		writer = io.Discard
@@ -286,7 +299,7 @@ func newExecutor(logger *logrus.Logger, logPrefix string, store storage.Store, o
 		rootfsMap:                               make(map[string]struct{}),
 		blobDirectory:                           options.BlobDirectory,
 		unusedArgs:                              make(map[string]struct{}),
-		capabilities:                            capabilities,
+		capabilities:                            caps,
 		deviceSpecs:                             options.Devices,
 		signBy:                                  options.SignBy,
 		architecture:                            options.Architecture,
@@ -487,6 +500,7 @@ func (b *Executor) getImageTypeAndHistoryAndDiffIDs(ctx context.Context, imageID
 }
 
 func (b *Executor) buildStage(ctx context.Context, cleanupStages map[int]*StageExecutor, stages imagebuilder.Stages, stageIndex int) (imageID string, ref reference.Canonical, onlyBaseImage bool, err error) {
+	fmt.Println("Building stage ")
 	stage := stages[stageIndex]
 	ib := stage.Builder
 	node := stage.Node
@@ -495,6 +509,7 @@ func (b *Executor) buildStage(ctx context.Context, cleanupStages map[int]*StageE
 		logrus.Debugf("buildStage(node.Children=%#v)", node.Children)
 		return "", nil, false, err
 	}
+	fmt.Println("using base image " + base)
 
 	// If this is the last stage, then the image that we produce at
 	// its end should be given the desired output name.
@@ -583,6 +598,7 @@ func (b *Executor) buildStage(ctx context.Context, cleanupStages map[int]*StageE
 	}
 
 	// Build this stage.
+	fmt.Println("executing stage")
 	if imageID, ref, onlyBaseImage, err = stageExecutor.Execute(ctx, base); err != nil {
 		return "", nil, onlyBaseImage, err
 	}
@@ -884,6 +900,7 @@ func (b *Executor) Build(ctx context.Context, stages imagebuilder.Stages) (image
 		}
 	}
 	b.warnOnUnsetBuildArgs(stages, dependencyMap, b.args)
+	fmt.Println("Done looping through stages")
 
 	type Result struct {
 		Index         int

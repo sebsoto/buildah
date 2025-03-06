@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"math/rand"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -128,8 +129,9 @@ func newBuilder(ctx context.Context, store storage.Store, options BuilderOptions
 	if options.FromImage == BaseImageFakeName {
 		options.FromImage = ""
 	}
+	fmt.Println("here41")
 
-	if options.NetworkInterface == nil {
+	if options.NetworkInterface == nil && runtime.GOOS != "windows" {
 		// create the network interface
 		// Note: It is important to do this before we pull any images/create containers.
 		// The default backend detection logic needs an empty store to correctly detect
@@ -139,8 +141,11 @@ func newBuilder(ctx context.Context, store storage.Store, options BuilderOptions
 			return nil, err
 		}
 	}
-
+	if options.NetworkInterface != nil {
+		fmt.Println("Got network interface! " + options.NetworkInterface.DefaultNetworkName())
+	}
 	systemContext := getSystemContext(store, options.SystemContext, options.SignaturePolicyPath)
+	fmt.Println("here42")
 
 	if options.FromImage != "" && options.FromImage != BaseImageFakeName {
 		imageRuntime, err := libimage.RuntimeFromStore(store, &libimage.RuntimeOptions{SystemContext: systemContext})
@@ -178,6 +183,7 @@ func newBuilder(ctx context.Context, store storage.Store, options BuilderOptions
 			}
 		}
 	}
+	fmt.Println("here43")
 
 	imageSpec := options.FromImage
 	imageID := ""
@@ -221,6 +227,7 @@ func newBuilder(ctx context.Context, store storage.Store, options BuilderOptions
 	}
 
 	name := "working-container"
+	fmt.Println("creating " + name)
 	if options.ContainerSuffix != "" {
 		name = options.ContainerSuffix
 	}
@@ -278,14 +285,17 @@ func newBuilder(ctx context.Context, store storage.Store, options BuilderOptions
 			}
 		}
 	}()
+	fmt.Println("converting storage id maps")
 
 	uidmap, gidmap := convertStorageIDMaps(container.UIDMap, container.GIDMap)
 
-	defaultNamespaceOptions, err := DefaultNamespaceOptions()
-	if err != nil {
-		return nil, err
+	var defaultNamespaceOptions define.NamespaceOptions
+	if runtime.GOOS != "windows" {
+		defaultNamespaceOptions, err = DefaultNamespaceOptions()
+		if err != nil {
+			return nil, err
+		}
 	}
-
 	namespaceOptions := defaultNamespaceOptions
 	namespaceOptions.AddOrReplace(options.NamespaceOptions...)
 
@@ -333,6 +343,7 @@ func newBuilder(ctx context.Context, store storage.Store, options BuilderOptions
 			return nil, fmt.Errorf("mounting build container %q: %w", builder.ContainerID, err)
 		}
 	}
+	fmt.Println("handled mounts")
 
 	if err := builder.initConfig(ctx, systemContext, src, &options); err != nil {
 		return nil, fmt.Errorf("preparing image configuration: %w", err)
@@ -349,6 +360,7 @@ func newBuilder(ctx context.Context, store storage.Store, options BuilderOptions
 		}
 	}
 
+	fmt.Println("Saving")
 	err = builder.Save()
 	if err != nil {
 		return nil, fmt.Errorf("saving builder state for container %q: %w", builder.ContainerID, err)

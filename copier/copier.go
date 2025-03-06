@@ -580,19 +580,21 @@ func copier(bulkReader io.Reader, bulkWriter io.Writer, req request) (*response,
 			return nil, fmt.Errorf("rewriting %q to be relative to %q: %w", req.Directory, req.Root, err)
 		}
 	}
+	fmt.Printf("\nhandling req %+v\n", req)
 	isAlreadyRoot, err := isVolumeRoot(req.Root)
 	if err != nil {
 		return nil, fmt.Errorf("checking if %q is a root directory: %w", req.Root, err)
 	}
-	if !isAlreadyRoot && canChroot {
+	if false && !isAlreadyRoot && canChroot {
 		return copierWithSubprocess(bulkReader, bulkWriter, req)
 	}
 	return copierWithoutSubprocess(bulkReader, bulkWriter, req)
 }
 
 func copierWithoutSubprocess(bulkReader io.Reader, bulkWriter io.Writer, req request) (*response, error) {
+	fmt.Println("copier without subprocess")
 	req.preservedRoot = req.Root
-	req.rootPrefix = string(os.PathSeparator)
+	req.rootPrefix = filepath.VolumeName(req.preservedRoot) + string(os.PathSeparator)
 	req.preservedDirectory = req.Directory
 	req.preservedGlobs = append([]string{}, req.Globs...)
 	if !filepath.IsAbs(req.Directory) {
@@ -606,6 +608,7 @@ func copierWithoutSubprocess(bulkReader io.Reader, bulkWriter io.Writer, req req
 				fmt.Fprintf(os.Stderr, "error rewriting %q to be relative to %q: %v", glob, req.preservedRoot, err)
 				os.Exit(1)
 			}
+			fmt.Printf("converting glob %s to relative glob %s\n", glob, relativeGlob)
 			absoluteGlobs = append(absoluteGlobs, filepath.Join(req.Root, string(os.PathSeparator)+relativeGlob))
 		} else {
 			absoluteGlobs = append(absoluteGlobs, filepath.Join(req.Directory, cleanerReldirectory(glob)))
@@ -635,6 +638,7 @@ func closeIfNotNilYet(f **os.File, what string) {
 }
 
 func copierWithSubprocess(bulkReader io.Reader, bulkWriter io.Writer, req request) (resp *response, err error) {
+	fmt.Println("copier with subprocess")
 	if bulkReader == nil {
 		bulkReader = bytes.NewReader([]byte{})
 	}
@@ -646,6 +650,7 @@ func copierWithSubprocess(bulkReader io.Reader, bulkWriter io.Writer, req reques
 	if err != nil {
 		return nil, fmt.Errorf("pipe: %w", err)
 	}
+	fmt.Println("copier with subprocess-1")
 	defer closeIfNotNilYet(&stdinRead, "stdin pipe reader")
 	defer closeIfNotNilYet(&stdinWrite, "stdin pipe writer")
 	encoder := json.NewEncoder(stdinWrite)
@@ -653,6 +658,7 @@ func copierWithSubprocess(bulkReader io.Reader, bulkWriter io.Writer, req reques
 	if err != nil {
 		return nil, fmt.Errorf("pipe: %w", err)
 	}
+	fmt.Println("copier with subprocess-2")
 	defer closeIfNotNilYet(&stdoutRead, "stdout pipe reader")
 	defer closeIfNotNilYet(&stdoutWrite, "stdout pipe writer")
 	decoder := json.NewDecoder(stdoutRead)
@@ -660,17 +666,20 @@ func copierWithSubprocess(bulkReader io.Reader, bulkWriter io.Writer, req reques
 	if err != nil {
 		return nil, fmt.Errorf("pipe: %w", err)
 	}
+	fmt.Println("copier with subprocess-3")
 	defer closeIfNotNilYet(&bulkReaderRead, "child bulk content reader pipe, read end")
 	defer closeIfNotNilYet(&bulkReaderWrite, "child bulk content reader pipe, write end")
 	bulkWriterRead, bulkWriterWrite, err := os.Pipe()
 	if err != nil {
 		return nil, fmt.Errorf("pipe: %w", err)
 	}
+	fmt.Println("copier with subprocess-4")
 	defer closeIfNotNilYet(&bulkWriterRead, "child bulk content writer pipe, read end")
 	defer closeIfNotNilYet(&bulkWriterWrite, "child bulk content writer pipe, write end")
 	cmd.Dir = "/"
 	cmd.Env = append([]string{fmt.Sprintf("LOGLEVEL=%d", logrus.GetLevel())}, os.Environ()...)
 
+	fmt.Println("copier with subprocess-5")
 	errorBuffer := bytes.Buffer{}
 	cmd.Stdin = stdinRead
 	cmd.Stdout = stdoutWrite
@@ -679,6 +688,7 @@ func copierWithSubprocess(bulkReader io.Reader, bulkWriter io.Writer, req reques
 	if err = cmd.Start(); err != nil {
 		return nil, fmt.Errorf("starting subprocess: %w", err)
 	}
+	fmt.Println("copier with subprocess-6")
 	cmdToWaitFor := cmd
 	defer func() {
 		if cmdToWaitFor != nil {
@@ -697,6 +707,7 @@ func copierWithSubprocess(bulkReader io.Reader, bulkWriter io.Writer, req reques
 	bulkReaderRead = nil
 	bulkWriterWrite.Close()
 	bulkWriterWrite = nil
+	fmt.Println("copier with subprocess-7")
 	killAndReturn := func(err error, step string) (*response, error) { // nolint: unparam
 		if err2 := cmd.Process.Kill(); err2 != nil {
 			return nil, fmt.Errorf("killing subprocess: %v; %s: %w", err2, step, err)
@@ -712,15 +723,19 @@ func copierWithSubprocess(bulkReader io.Reader, bulkWriter io.Writer, req reques
 		}
 		return nil, fmt.Errorf("%v: %w", step, err)
 	}
+	fmt.Println("copier with subprocess-8")
+	fmt.Printf("Req: %+v\n", req)
 	if err = encoder.Encode(req); err != nil {
 		return killAndReturn(err, "error encoding work request for copier subprocess")
 	}
 	if err = decoder.Decode(&resp); err != nil {
+		fmt.Println(err)
 		if errors.Is(err, io.EOF) && errorBuffer.Len() > 0 {
 			return killAndReturn(errors.New(errorBuffer.String()), "error in copier subprocess")
 		}
 		return killAndReturn(err, "error decoding response from copier subprocess")
 	}
+	fmt.Println("copier with subprocess-9")
 	if err = encoder.Encode(&request{Request: requestQuit}); err != nil {
 		return killAndReturn(err, "error encoding quit request for copier subprocess")
 	}
@@ -752,6 +767,7 @@ func copierWithSubprocess(bulkReader io.Reader, bulkWriter io.Writer, req reques
 		}
 		return nil, err
 	}
+	fmt.Println("copier with subprocess-10")
 	if cmd.ProcessState.Exited() && !cmd.ProcessState.Success() {
 		err = fmt.Errorf("subprocess exited with error")
 		if errorBuffer.String() != "" {
@@ -1055,7 +1071,11 @@ func copierHandlerEval(req request) *response {
 	if err != nil {
 		return errorResponse("copier: eval: error resolving %q: %v", req.Directory, err)
 	}
-	return &response{Eval: evalResponse{Evaluated: filepath.Join(req.rootPrefix, resolvedTarget)}}
+	evaluated := resolvedTarget
+	if !strings.HasPrefix(evaluated, req.rootPrefix) {
+		evaluated = filepath.Join(req.rootPrefix, resolvedTarget)
+	}
+	return &response{Eval: evalResponse{Evaluated: evaluated}}
 }
 
 func copierHandlerStat(req request, pm *fileutils.PatternMatcher) *response {
@@ -1094,7 +1114,11 @@ func copierHandlerStat(req request, pm *fileutils.PatternMatcher) *response {
 			// path that we should hand back for the match
 			var resultName string
 			if filepath.IsAbs(req.preservedGlobs[i]) {
-				resultName = filepath.Join(req.rootPrefix, globbed)
+				if !strings.HasPrefix(globbed, req.rootPrefix) {
+					resultName = filepath.Join(req.rootPrefix, globbed)
+				} else {
+					resultName = globbed
+				}
 			} else {
 				relResult := rel
 				if req.Directory != req.Root {
@@ -1171,6 +1195,9 @@ func copierHandlerStat(req request, pm *fileutils.PatternMatcher) *response {
 			Error: fmt.Sprintf("copier: stat: %q: %v", req.Globs, syscall.ENOENT),
 		}
 		stats = append(stats, &s)
+	}
+	for _, stat := range stats {
+		fmt.Printf("%s: %s\n", stat.Glob, stat.Globbed)
 	}
 	return &response{Stat: statResponse{Globs: stats}}
 }
@@ -1794,6 +1821,7 @@ func copierHandlerPut(bulkReader io.Reader, req request, idMappings *idtools.IDM
 			}
 			// figure out what the permissions should be
 			if req.PutOptions.StripSetuidBit && hdr.Mode&cISUID == cISUID {
+				fmt.Println("here stripping thing")
 				hdr.Mode &^= cISUID
 			}
 			if req.PutOptions.StripSetgidBit && hdr.Mode&cISGID == cISGID {
@@ -2013,6 +2041,7 @@ func copierHandlerPut(bulkReader io.Reader, req request, idMappings *idtools.IDM
 }
 
 func copierHandlerMkdir(req request, idMappings *idtools.IDMappings) (*response, func() error, error) {
+	fmt.Printf("\n\n\nin copierHandlerMkdir")
 	errorResponse := func(fmtspec string, args ...interface{}) (*response, func() error, error) {
 		return &response{Error: fmt.Sprintf(fmtspec, args...), Mkdir: mkdirResponse{}}, nil, nil
 	}
@@ -2033,20 +2062,26 @@ func copierHandlerMkdir(req request, idMappings *idtools.IDMappings) (*response,
 		dirUID, dirGID = hostDirPair.UID, hostDirPair.GID
 	}
 
+	fmt.Printf("in copierHandlerMkdir resolving path with root %s dir %s\n\n", req.Root, req.Directory)
 	directory, err := resolvePath(req.Root, req.Directory, true, nil)
 	if err != nil {
 		return errorResponse("copier: mkdir: error resolving %q: %v", req.Directory, err)
 	}
 
+	fmt.Printf("resolved directory %s\n\n", directory)
 	rel, err := convertToRelSubdirectory(req.Root, directory)
 	if err != nil {
 		return errorResponse("copier: mkdir: error computing path of %q relative to %q: %v", directory, req.Root, err)
 	}
+	fmt.Printf("\ngot relative path %s\n", rel)
+	fmt.Printf("\n\n\n About to go through comp loop \n\n\n")
 
 	subdir := ""
 	for _, component := range strings.Split(rel, string(os.PathSeparator)) {
+		fmt.Printf("processing component %s\n", component)
 		subdir = filepath.Join(subdir, component)
 		path := filepath.Join(req.Root, subdir)
+		fmt.Printf("Running mkdir %s\n", path)
 		if err := os.Mkdir(path, 0o700); err == nil {
 			if err = chown(path, dirUID, dirGID); err != nil {
 				return errorResponse("copier: mkdir: error setting owner of %q to %d:%d: %v", path, dirUID, dirGID, err)
@@ -2083,4 +2118,7 @@ func copierHandlerRemove(req request) *response {
 		return errorResponse("copier: remove %q: %v", req.Directory, err)
 	}
 	return &response{Error: "", Remove: removeResponse{}}
+}
+
+func splitFilepathComponents(path string) {
 }

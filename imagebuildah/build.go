@@ -450,6 +450,7 @@ func buildDockerfilesOnce(ctx context.Context, store storage.Store, logger *logr
 	if err != nil {
 		return "", nil, fmt.Errorf("creating build executor: %w", err)
 	}
+	fmt.Println("Created build executor")
 	b := imagebuilder.NewBuilder(options.Args)
 	for k, v := range builtinArgDefaults {
 		b.BuiltinArgDefaults[k] = v
@@ -461,6 +462,7 @@ func buildDockerfilesOnce(ctx context.Context, store storage.Store, logger *logr
 	}
 	b.Env = append(defaultContainerConfig.GetDefaultEnv(), b.Env...)
 	stages, err := imagebuilder.NewStages(mainNode, b)
+	fmt.Println("Created stages")
 	if err != nil {
 		return "", nil, fmt.Errorf("reading multiple stages: %w", err)
 	}
@@ -471,6 +473,7 @@ func buildDockerfilesOnce(ctx context.Context, store storage.Store, logger *logr
 		}
 		stages = stagesTargeted
 	}
+	fmt.Println("Building")
 	return exec.Build(ctx, stages)
 }
 

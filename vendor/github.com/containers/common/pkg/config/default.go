@@ -326,7 +326,7 @@ func defaultEngineConfig() (*EngineConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.TmpDir = tmp
+	c.TmpDir = "/"+tmp
 
 	c.EventsLogFileMaxSize = eventsLogMaxSize(DefaultEventsLogSizeMax)
 

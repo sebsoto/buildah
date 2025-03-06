@@ -380,6 +380,7 @@ func (s *StageExecutor) Copy(excludes []string, copies ...imagebuilder.Copy) err
 }
 
 func (s *StageExecutor) performCopy(excludes []string, copies ...imagebuilder.Copy) error {
+	fmt.Println("copy loop start")
 	copiesExtend := []imagebuilder.Copy{}
 	for _, copy := range copies {
 		if err := s.volumeCacheInvalidate(copy.Dest); err != nil {
@@ -395,6 +396,7 @@ func (s *StageExecutor) performCopy(excludes []string, copies ...imagebuilder.Co
 		stripSetgid := false
 		preserveOwnership := false
 		contextDir := s.executor.contextDir
+		fmt.Println("copy loop 1")
 		// If we are copying files via heredoc syntax, then
 		// its time to create these temporary files on host
 		// and copy these to container
@@ -454,6 +456,7 @@ func (s *StageExecutor) performCopy(excludes []string, copies ...imagebuilder.Co
 			contextDir = parse.GetTempDir()
 			copy.Src = copySources
 		}
+		fmt.Println("copy loop 2")
 
 		if len(copy.From) > 0 && len(copy.Files) == 0 {
 			// If from has an argument within it, resolve it to its
@@ -545,6 +548,7 @@ func (s *StageExecutor) performCopy(excludes []string, copies ...imagebuilder.Co
 			stripSetuid = true // did this change between 18.06 and 19.03?
 			stripSetgid = true // did this change between 18.06 and 19.03?
 		}
+		fmt.Println("copy loop 3")
 		if copy.Download {
 			logrus.Debugf("ADD %#v, %#v", excludes, copy)
 		} else {
@@ -563,6 +567,7 @@ func (s *StageExecutor) performCopy(excludes []string, copies ...imagebuilder.Co
 				sources = append(sources, filepath.Join(contextDir, src))
 			}
 		}
+		fmt.Println("copy loop 4")
 		options := buildah.AddAndCopyOptions{
 			Chmod:             copy.Chmod,
 			Chown:             copy.Chown,
@@ -1215,6 +1220,7 @@ func (s *StageExecutor) Execute(ctx context.Context, base string) (imgID string,
 		return "", nil, false, err
 	}
 	children := stage.Node.Children
+	fmt.Println("prepared container!")
 
 	// A helper function to only log "COMMIT" as an explicit step if it's
 	// the very last step of a (possibly multi-stage) build.
@@ -1313,6 +1319,7 @@ func (s *StageExecutor) Execute(ctx context.Context, base string) (imgID string,
 		logImageID(imgID)
 	}
 
+	fmt.Println("going to resolve")
 	for i, node := range children {
 		logRusage()
 		moreInstructions := i < len(children)-1
@@ -1406,6 +1413,7 @@ func (s *StageExecutor) Execute(ctx context.Context, base string) (imgID string,
 				break
 			}
 		}
+		fmt.Println("done with flags")
 
 		// Determine if there are any RUN instructions to be run after
 		// this step.  If not, we won't have to bother preserving the
@@ -1425,6 +1433,7 @@ func (s *StageExecutor) Execute(ctx context.Context, base string) (imgID string,
 				logrus.Debugf("Error building at step %+v: %v", *step, err)
 				return "", nil, false, fmt.Errorf("building at STEP \"%s\": %w", step.Message, err)
 			}
+			fmt.Println("run complete")
 			// In case we added content, retrieve its digest.
 			addedContentSummary := s.getContentSummaryAfterAddingContent()
 			if moreInstructions {
@@ -1484,6 +1493,7 @@ func (s *StageExecutor) Execute(ctx context.Context, base string) (imgID string,
 			canMatchCacheOnlyAfterRun bool
 		)
 
+		fmt.Println("qqqq")
 		// Only attempt to find cache if its needed, this part is needed
 		// so that if a step is using RUN --mount and mounts content from
 		// previous stages then it uses the freshly built stage instead

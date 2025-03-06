@@ -267,6 +267,7 @@ func globbedToGlobbable(glob string) string {
 // filesystem, optionally extracting contents of local files that look like
 // non-empty archives.
 func (b *Builder) Add(destination string, extract bool, options AddAndCopyOptions, sources ...string) error {
+	fmt.Println("in add")
 	mountPoint, err := b.Mount(b.MountLabel)
 	if err != nil {
 		return err
@@ -276,6 +277,7 @@ func (b *Builder) Add(destination string, extract bool, options AddAndCopyOption
 			logrus.Errorf("error unmounting container: %v", err2)
 		}
 	}()
+	fmt.Println("in add 1")
 
 	contextDir := options.ContextDir
 	currentDir := options.ContextDir
@@ -293,6 +295,7 @@ func (b *Builder) Add(destination string, extract bool, options AddAndCopyOption
 			}
 		}
 	}
+	fmt.Println("in add 2")
 
 	// Figure out what sorts of sources we have.
 	var localSources, remoteSources, gitSources []string
@@ -313,6 +316,7 @@ func (b *Builder) Add(destination string, extract bool, options AddAndCopyOption
 		}
 		localSources = append(localSources, sources[i])
 	}
+	fmt.Println("in add 3")
 
 	// Treat git sources as a subset of remote sources
 	// differentiating only in how we fetch the two later on.
@@ -328,15 +332,19 @@ func (b *Builder) Add(destination string, extract bool, options AddAndCopyOption
 		statOptions := copier.StatOptions{
 			CheckForArchives: extract,
 		}
+		fmt.Printf("calling stat %s, %s, %v, %s\n", contextDir, contextDir, statOptions, localSources)
 		localSourceStats, err = copier.Stat(contextDir, contextDir, statOptions, localSources)
 		if err != nil {
 			return fmt.Errorf("checking on sources under %q: %w", contextDir, err)
 		}
+		fmt.Printf("got localSourceStats: %v\n", localSourceStats)
 	}
+	fmt.Println("in add 4")
 	numLocalSourceItems := 0
 	for _, localSourceStat := range localSourceStats {
 		if localSourceStat.Error != "" {
 			errorText := localSourceStat.Error
+			fmt.Println("calling rel on " + localSourceStat.Glob)
 			rel, err := filepath.Rel(contextDir, localSourceStat.Glob)
 			if err != nil {
 				errorText = fmt.Sprintf("%v; %s", err, errorText)
@@ -354,6 +362,7 @@ func (b *Builder) Add(destination string, extract bool, options AddAndCopyOption
 	if numLocalSourceItems+len(remoteSources)+len(gitSources) == 0 {
 		return fmt.Errorf("no sources %v found: %w", sources, syscall.ENOENT)
 	}
+	fmt.Println("in add 5")
 
 	// Find out which user (and group) the destination should belong to.
 	var chownDirs, chownFiles *idtools.IDPair
@@ -373,6 +382,7 @@ func (b *Builder) Add(destination string, extract bool, options AddAndCopyOption
 		perm := os.FileMode(p)
 		chmodDirsFiles = &perm
 	}
+	fmt.Println("in add 6")
 
 	chownDirs = &idtools.IDPair{UID: int(userUID), GID: int(userGID)}
 	chownFiles = &idtools.IDPair{UID: int(userUID), GID: int(userGID)}
@@ -385,6 +395,7 @@ func (b *Builder) Add(destination string, extract bool, options AddAndCopyOption
 	// source item, or the destination has a path separator at the end of
 	// it, and it's not a remote URL, the destination needs to be a
 	// directory.
+	fmt.Printf("destination: %s\n", destination)
 	if destination == "" || !filepath.IsAbs(destination) {
 		tmpDestination := filepath.Join(string(os.PathSeparator)+b.WorkDir(), destination)
 		if destination == "" || strings.HasSuffix(destination, string(os.PathSeparator)) {
@@ -393,6 +404,7 @@ func (b *Builder) Add(destination string, extract bool, options AddAndCopyOption
 			destination = tmpDestination
 		}
 	}
+	fmt.Printf("destination: %s\n", destination)
 	destMustBeDirectory := (len(sources) > 1) || strings.HasSuffix(destination, string(os.PathSeparator)) || destination == b.WorkDir()
 	destCanBeFile := false
 	if len(sources) == 1 {
@@ -412,6 +424,7 @@ func (b *Builder) Add(destination string, extract bool, options AddAndCopyOption
 			destMustBeDirectory = true
 		}
 	}
+	fmt.Println("in add 7")
 
 	// We care if the destination either doesn't exist, or exists and is a
 	// file.  If the source can be a single file, for those cases we treat
@@ -421,15 +434,19 @@ func (b *Builder) Add(destination string, extract bool, options AddAndCopyOption
 	statOptions := copier.StatOptions{
 		CheckForArchives: extract,
 	}
+	fmt.Printf("extract dir: %s\n", extractDirectory)
 	destStats, err := copier.Stat(mountPoint, filepath.Join(mountPoint, b.WorkDir()), statOptions, []string{extractDirectory})
 	if err != nil {
 		return fmt.Errorf("checking on destination %v: %w", extractDirectory, err)
 	}
+	fmt.Printf("got dest stat results: %+v\n", destStats)
 	if (len(destStats) == 0 || len(destStats[0].Globbed) == 0) && !destMustBeDirectory && destCanBeFile {
 		// destination doesn't exist - extract to parent and rename the incoming file to the destination's name
 		renameTarget = filepath.Base(extractDirectory)
 		extractDirectory = filepath.Dir(extractDirectory)
 	}
+	fmt.Printf("rename target: %s\n", extractDirectory)
+	fmt.Printf("extract dir: %s\n", extractDirectory)
 
 	// if the destination is a directory that doesn't yet exist, let's copy it.
 	newDestDirFound := false
@@ -445,6 +462,7 @@ func (b *Builder) Add(destination string, extract bool, options AddAndCopyOption
 		renameTarget = filepath.Base(extractDirectory)
 		extractDirectory = filepath.Dir(extractDirectory)
 	}
+	fmt.Println("in add 8")
 
 	pm, err := fileutils.NewPatternMatcher(options.Excludes)
 	if err != nil {
@@ -454,11 +472,13 @@ func (b *Builder) Add(destination string, extract bool, options AddAndCopyOption
 	// Make sure that, if it's a symlink, we'll chroot to the target of the link;
 	// knowing that target requires that we resolve it within the chroot.
 	evalOptions := copier.EvalOptions{}
+	fmt.Printf("calling eval with mountpoint: %s, extractDir: %s\n", mountPoint, extractDirectory)
 	evaluated, err := copier.Eval(mountPoint, extractDirectory, evalOptions)
 	if err != nil {
 		return fmt.Errorf("checking on destination %v: %w", extractDirectory, err)
 	}
 	extractDirectory = evaluated
+	fmt.Printf("extract dir changed to evaluated: %s\n", extractDirectory)
 
 	// Set up ID maps.
 	var srcUIDMap, srcGIDMap []idtools.IDMap
@@ -473,15 +493,19 @@ func (b *Builder) Add(destination string, extract bool, options AddAndCopyOption
 		GIDMap:   destGIDMap,
 		ChownNew: chownDirs,
 	}
+	fmt.Println("in add 9")
+	fmt.Printf("calling mkdir with mountpoint: %s, extractDir: %s\n", mountPoint, extractDirectory)
 	if err := copier.Mkdir(mountPoint, extractDirectory, mkdirOptions); err != nil {
 		return fmt.Errorf("ensuring target directory exists: %w", err)
 	}
+	fmt.Println("in add 10")
 
 	// Copy each source in turn.
 	for _, src := range sources {
 		var multiErr *multierror.Error
 		var getErr, closeErr, renameErr, putErr error
 		var wg sync.WaitGroup
+		fmt.Println("in add copying src " + src)
 		if sourceIsRemote(src) || sourceIsGit(src) {
 			pipeReader, pipeWriter := io.Pipe()
 			var srcDigest digest.Digest
@@ -494,6 +518,7 @@ func (b *Builder) Add(destination string, extract bool, options AddAndCopyOption
 
 			wg.Add(1)
 			if sourceIsGit(src) {
+				fmt.Println("in add git")
 				go func() {
 					var cloneDir, subdir string
 					cloneDir, subdir, getErr = define.TempDirForURL(tmpdir.GetTempDir(), "", src)
@@ -518,6 +543,7 @@ func (b *Builder) Add(destination string, extract bool, options AddAndCopyOption
 				}()
 			} else {
 				go func() {
+					fmt.Println("in add this go func")
 					getErr = retry.IfNecessary(context.TODO(), func() error {
 						return getURL(src, chownFiles, mountPoint, renameTarget, pipeWriter, chmodDirsFiles, srcDigest, options.CertPath, options.InsecureSkipTLSVerify)
 					}, &retry.Options{
@@ -549,6 +575,7 @@ func (b *Builder) Add(destination string, extract bool, options AddAndCopyOption
 						ChmodFiles:    nil,
 						IgnoreDevices: userns.RunningInUserNS(),
 					}
+					fmt.Println("in add running put")
 					putErr = copier.Put(extractDirectory, extractDirectory, putOptions, io.TeeReader(pipeReader, hasher))
 				}
 				hashCloser.Close()
@@ -571,7 +598,7 @@ func (b *Builder) Add(destination string, extract bool, options AddAndCopyOption
 			}
 			continue
 		}
-
+		fmt.Println("addsdadadsd")
 		if options.Checksum != "" {
 			return fmt.Errorf("checksum flag is not supported for local sources")
 		}
@@ -592,10 +619,12 @@ func (b *Builder) Add(destination string, extract bool, options AddAndCopyOption
 		itemsCopied := 0
 		for _, globbed := range localSourceStat.Globbed {
 			rel := globbed
+			fmt.Printf("rel set to %s\n", rel)
 			if filepath.IsAbs(globbed) {
 				if rel, err = filepath.Rel(contextDir, globbed); err != nil {
 					return fmt.Errorf("computing path of %q relative to %q: %w", globbed, contextDir, err)
 				}
+				fmt.Printf("globbed %s relative of %s is %s\n", globbed, contextDir, rel)
 			}
 			if strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 				return fmt.Errorf("possible escaping context directory error: %q is outside of %q", globbed, contextDir)

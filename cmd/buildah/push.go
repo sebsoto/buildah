@@ -242,6 +242,7 @@ func pushCmd(c *cobra.Command, args []string, iopts pushOptions) error {
 			if manifestsErr := manifestPush(systemContext, store, src, destSpec, iopts); manifestsErr == nil {
 				return nil
 			}
+			fmt.Println("did manifest push")
 		}
 		return util.GetFailureCause(err, fmt.Errorf("pushing image %q to %q: %w", src, destSpec, err))
 	}
